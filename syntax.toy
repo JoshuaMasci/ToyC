@@ -1,0 +1,72 @@
+//Type layout
+
+Foo*[2] foo;
+    foo is an array of 2 values
+    the values are pointers too Foo
+    Array is on stack
+
+Foo[2]* foo = new Foo[2]();
+    foo is a pointer to array of 2 values
+    the values are each of Foo Struct
+    Array is on heap
+
+!Foo[2]* foo = new Foo[2]();
+    Same as last, except pointer will free itself on scope exit
+
+????
+Foo*[2]* foo;
+    foo is a pointer to array of 2 pointers to Foo
+    Is this ok??? I think it should be
+
+Or lets not be c-like
+Foo[] foo;
+    foo is a slice of Foo array
+    foo.length will return the size of the slice
+
+void func(Foo foo) {}; //Pass by value
+void func(Foo* foo) {}; //Pass by pointer (aka reference);
+void func(Foo[] foo) {}; //Pass by slice (aka pointer);
+    Breaks down in c to void func(sizet foo_size, Foo* foo_data);
+
+
+Module Syntax
+    struct SomeStruct
+    {
+        i32 value;
+        f32 other_value;
+    };
+
+    impl SomeStruct
+    {
+        SomeStruct new()
+        {
+            SomeStruct some;
+            some.value = 1;
+            some.other_value = 1.1;
+            return some;
+        };
+
+        void some_func(this*, int value1)
+        {
+            this.value = value1;
+        }
+    }
+
+(i32, bool) multi_return_test()
+{
+    ...
+}
+
+(i32 some_int, bool some_bool) = multi_return_test();
+
+Using the syntax
+SomeStruct some = SomeStruct::new();
+some.some_func(1);
+
+//Thinking about BinOps
+vec3 pos = some_quat * some_vec3;
+Figure out type of lhs, Shouldn't be ambiguous???
+Find all binop overloads for lhs that match expected type, see if any match rhs (if don't match, error)
+
+1. Figure out type of lhs and rhs (If int, float, struct)
+2. Lookup func for return/lhs/rhs type combo;

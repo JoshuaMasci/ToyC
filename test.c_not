@@ -1,0 +1,12 @@
+i64 get2()
+{
+    i64 a = 1;
+    i64 b = 155;
+    return a + b;
+};
+
+i64 main()
+{
+    i64 value = get2();
+    return value;
+};
