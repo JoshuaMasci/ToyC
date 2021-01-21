@@ -1,3 +1,6 @@
+//This file is just for to store ideas about future synatx. 
+//None of the code or ideas written here are final. 
+
 //Type layout
 
 Foo*[2] foo;
