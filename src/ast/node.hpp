@@ -14,25 +14,36 @@ struct BlockNode
     };
 };
 
-struct ArgumentValue
+struct FunctionParameter
 {
     shared_ptr<Type> type;
     string name;
 };
+typedef vector<FunctionParameter> FunctionParameters;
 
 struct FunctionNode
 {
-    shared_ptr<Type> return_type;
     string name;
-    vector<ArgumentValue> arguments;
+    shared_ptr<Type> return_type;
+    vector<FunctionParameter> parameters;
     unique_ptr<BlockNode> block;
 
-    FunctionNode(const string& type, const string& name, BlockNode* block)
+    FunctionNode(const string& type, const string& name, BlockNode* block, FunctionParameters* function_parameters = nullptr)
     {
         //printf("FunctionNode %s %s\n", type.c_str(), name.c_str());
-        this->return_type = std::make_shared<UnresolvedType>(type);
         this->name = name;
+        this->return_type = std::make_shared<UnresolvedType>(type);
         this->block = unique_ptr<BlockNode>(block);
+
+        if(function_parameters)
+        {
+            parameters.resize(function_parameters->size());
+            for(size_t i = 0; i < this->parameters.size(); i++)
+            {
+                this->parameters[i] = function_parameters->at(i);
+            }
+            delete function_parameters;
+        }
     };
 };
 

@@ -30,6 +30,6 @@ protected:
 
     llvm::Function* generate_function_prototype(unique_ptr<FunctionNode>& function_node);
     void generate_function_body(llvm::Function* function, unique_ptr<FunctionNode>& function_node);
-    BlockResult generate_block(llvm::IRBuilder<>* builder, ScopeBlock* parent_scope, unique_ptr<BlockNode>& block, shared_ptr<Type> return_type);
-    llvm::Value* generate_expression(llvm::IRBuilder<>* builder, ScopeBlock* current_scope, unique_ptr<ExpressionNode>& expression, shared_ptr<Type> expected_type);
+    BlockResult generate_block(llvm::IRBuilder<>* builder, ScopeBlock* parent_scope, unique_ptr<BlockNode>& block);
+    llvm::Value* generate_expression(llvm::IRBuilder<>* builder, ScopeBlock* current_scope, unique_ptr<ExpressionNode>& expression);
 };

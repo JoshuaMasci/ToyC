@@ -45,7 +45,7 @@
 ">="					        return GREATER_EQUAL;
 
 -?[0-9]+						yylval.int_val = strtol(yytext, nullptr, 10); return INTEGER;
--?[0-9]+[.][0-9]+				yylval.string_id = StringCache::add(string(yytext, yyleng)); return FLOAT;
+-?[0-9]+[.][0-9]+				yylval.double_val = strtod(yytext, nullptr); return FLOAT;
 [a-zA-Z_]+[a-zA-Z_0-9]*?		yylval.string_id = StringCache::add(string(yytext, yyleng)); return IDENTIFIER;
 
 [ \n\t\r\f]+			        ;//Whitespace

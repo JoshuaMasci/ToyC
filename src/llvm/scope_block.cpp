@@ -5,7 +5,7 @@ ScopeBlock::ScopeBlock(ScopeBlock* parent)
     this->parent = parent;
 };
 
-void ScopeBlock::addLocalVariable(const string& name, VariableAllocation variable)
+void ScopeBlock::addLocalVariable(const string& name, llvm::AllocaInst* variable)
 {
     if(this->variables.find(name) != this->variables.end())
     {
@@ -15,7 +15,7 @@ void ScopeBlock::addLocalVariable(const string& name, VariableAllocation variabl
     this->variables[name] = variable;
 };
 
-VariableAllocation ScopeBlock::getLocalVariable(const string& name)
+llvm::AllocaInst* ScopeBlock::getLocalVariable(const string& name)
 {
     auto find_it = this->variables.find(name);
     if(find_it != this->variables.end())
@@ -30,5 +30,5 @@ VariableAllocation ScopeBlock::getLocalVariable(const string& name)
         }
     }
     
-    return VariableAllocation();
+    return nullptr;
 };

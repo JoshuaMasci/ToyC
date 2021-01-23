@@ -12,9 +12,28 @@ enum class MathOperator
     MOD
 };
 
+enum class BinaryOperator
+{
+    Iadd,
+    Isub,
+    Imul,
+    Idiv,
+    Imod,
+    Udiv,
+    Umod,
+
+    Fadd,
+    Fsub,
+    Fmul,
+    Fdiv,
+    Fmod,
+
+    Function,
+    Invalid,
+};
+
 enum class ExpressionType
 {
-    NumericalConst,
     ConstInt,
     ConstFloat,
     Identifier,
@@ -28,74 +47,49 @@ struct ExpressionNode
     const ExpressionType expression_type;
 };
 
-struct NumericalConstantExpressionNode : ExpressionNode
-{
-    string constant;
-
-    NumericalConstantExpressionNode(const string& constant)
-            :ExpressionNode(ExpressionType::NumericalConst)
-    {
-        this->constant = constant;
-    }
-};
-
 struct ConstantIntegerExpressionNode : ExpressionNode
 {
+    shared_ptr<Type> int_type;
     uint64_t value;
 
-    ConstantIntegerExpressionNode(uint64_t value)
+    ConstantIntegerExpressionNode(long value)
     :ExpressionNode(ExpressionType::ConstInt)
     {
-        //printf("ConstantIntegerExpressionNode %d\n", value);
         this->value = value;
-    };
-};
-
-struct ConstantDoubleExpressionNode : ExpressionNode
-{
-    enum ConstDoubleType
-    {
-        Unresolved,
-        Float,
-        Double,
-    };
-
-    ConstDoubleType float_type;
-    string unresolved_value;
-    union Data
-    {
-        double value_64;
-        float value_32;
-    } data;
-
-    ConstantDoubleExpressionNode(const string& value)
-    :ExpressionNode(ExpressionType::ConstFloat)
-    {
-        this->float_type = ConstDoubleType::Unresolved;
-        this->unresolved_value = value;
     };
 
     void resolve_value(shared_ptr<Type> type)
     {
-        if(type->get_class() == TypeClass::Float)
+        if(type->get_class() != TypeClass::Int)
         {
-            FloatType* new_type = (FloatType*)type.get();
+            printf("Error: cannot cast int to type\n");
+            exit(-1);
+        }
 
-            if(new_type->is_f32())
-            {
-                this->float_type = ConstDoubleType::Float;
-                this->data.value_32 = stof(this->unresolved_value);
-            }
-            else
-            {
-                this->float_type = ConstDoubleType::Double;
-                this->data.value_32 = stod(this->unresolved_value);
-            }
-        }
-        else
+        this->int_type = type;
+    }
+};
+
+struct ConstantDoubleExpressionNode : ExpressionNode
+{
+    shared_ptr<Type> float_type;
+    double value;
+
+    ConstantDoubleExpressionNode(double value)
+    :ExpressionNode(ExpressionType::ConstFloat)
+    {
+        this->value = value;
+    };
+
+    void resolve_value(shared_ptr<Type> type)
+    {
+        if(type->get_class() != TypeClass::Float)
         {
-            //Panic here
+            printf("Error: cannot cast float to type\n");
+            exit(-1);
         }
+
+        this->float_type = type;
     }
 };
 
@@ -110,21 +104,33 @@ struct IdentifierExpressionNode : ExpressionNode
     }
 };
 
+typedef vector<ExpressionNode*> FunctionArguments;
 struct FunctionCallExpressionNode : ExpressionNode
 {
     std::string function_name;
     vector<unique_ptr<ExpressionNode>> arguments;
 
-    FunctionCallExpressionNode(const string& name)
+    FunctionCallExpressionNode(const string& name, FunctionArguments* argument_list = nullptr)
     :ExpressionNode(ExpressionType::Function)
     {
         this->function_name = name;
+
+        if(argument_list)
+        {
+            arguments.resize(argument_list->size());
+            for(size_t i = 0; i < arguments.size(); i++)
+            {
+                arguments[i] = unique_ptr<ExpressionNode>(argument_list->at(i));
+            }
+            delete argument_list;
+        }
     }
 };
 
 struct BinaryOperatorExpressionNode : ExpressionNode
-{  
+{
     MathOperator op;
+    BinaryOperator binary_op = BinaryOperator::Invalid;
     unique_ptr<ExpressionNode> lhs;
     unique_ptr<ExpressionNode> rhs;
 

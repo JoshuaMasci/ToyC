@@ -5,20 +5,14 @@
 
 #include <llvm/IR/Instructions.h>
 
-struct VariableAllocation
-{
-    shared_ptr<Type> type;
-    llvm::AllocaInst* allocation = nullptr;
-};
-
 class ScopeBlock
 {
     protected:
     ScopeBlock* parent;
-    unordered_map<string, VariableAllocation> variables;
+    unordered_map<string, llvm::AllocaInst*> variables;
 
     public:
     ScopeBlock(ScopeBlock* parent);
-    void addLocalVariable(const string& name, VariableAllocation variable);
-    VariableAllocation getLocalVariable(const string& name);
+    void addLocalVariable(const string& name, llvm::AllocaInst* variable);
+    llvm::AllocaInst* getLocalVariable(const string& name);
 };

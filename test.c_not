@@ -1,12 +1,10 @@
-i64 get2()
+i64 add2(i64 value)
 {
-    i64 a = 1;
-    i64 b = 155;
-    return a + b;
-};
+    return 2 + value;
+}
 
 i64 main()
 {
-    i64 value = get2();
-    return value;
-};
+    i64 value = 15;
+    return add2(value);
+}

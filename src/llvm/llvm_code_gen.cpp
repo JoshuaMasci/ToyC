@@ -77,6 +77,13 @@ llvm::Function* Module::generate_function_prototype(unique_ptr<FunctionNode>& fu
     llvm::Type* return_type = this->getType(function_node->return_type);
     vector<llvm::BasicBlock*> llvm_basic_block_list;
     vector<llvm::Type*> arg_types;
+
+    arg_types.reserve(function_node->parameters.size());
+    for (int i = 0; i < function_node->parameters.size(); ++i)
+    {
+        arg_types.push_back(this->getType(function_node->parameters[i].type));
+    }
+
     llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, makeArrayRef(arg_types), false);
     llvm::Function* llvm_function = llvm::Function::Create(func_type, llvm::GlobalValue::ExternalLinkage, function_node->name,*this->module);
     llvm_function->setCallingConv(llvm::CallingConv::C);
@@ -88,14 +95,25 @@ void Module::generate_function_body(llvm::Function* function, unique_ptr<Functio
     llvm::BasicBlock* llvm_block = llvm::BasicBlock::Create(*this->context, "entry", function);
     llvm::IRBuilder<> builder(llvm_block);
 
-    ScopeBlock global_scope(nullptr);
-    if(this->generate_block(&builder, nullptr, function_node->block, function_node->return_type) != BlockResult::Returned)
+    ScopeBlock function_scope(nullptr);
+
+    size_t i = 0;
+    for (auto& argument : function->args())
+    {
+        llvm::Type* variable_type = this->getType(function_node->parameters[i].type);
+        llvm::AllocaInst* alloc = builder.CreateAlloca(variable_type, nullptr, function_node->parameters[i].name);
+        builder.CreateStore(&argument, alloc);
+        function_scope.addLocalVariable(function_node->parameters[i].name, alloc);
+        i++;
+    }
+
+    if(this->generate_block(&builder, &function_scope, function_node->block) != BlockResult::Returned)
     {
         builder.CreateRet(nullptr);
     }
 }
 
-BlockResult Module::generate_block(llvm::IRBuilder<>* builder, ScopeBlock* parent_scope, unique_ptr<BlockNode>& block, shared_ptr<Type> return_type)
+BlockResult Module::generate_block(llvm::IRBuilder<>* builder, ScopeBlock* parent_scope, unique_ptr<BlockNode>& block)
 {
     llvm::IRBuilder<>* current_builder = builder;
 
@@ -110,9 +128,9 @@ BlockResult Module::generate_block(llvm::IRBuilder<>* builder, ScopeBlock* paren
                 llvm::Type* variable_type = this->getType(declaration_node->type);
 
                 llvm::AllocaInst* alloc = current_builder->CreateAlloca(variable_type, nullptr, declaration_node->name);
-                current_scope.addLocalVariable(declaration_node->name, {declaration_node->type, alloc});
+                current_scope.addLocalVariable(declaration_node->name, alloc);
                 if (declaration_node->expression) {
-                    llvm::Value *value = this->generate_expression(current_builder, &current_scope, declaration_node->expression, declaration_node->type);
+                    llvm::Value *value = this->generate_expression(current_builder, &current_scope, declaration_node->expression);
                     current_builder->CreateStore(value, alloc);
                 }
             }
@@ -120,13 +138,13 @@ BlockResult Module::generate_block(llvm::IRBuilder<>* builder, ScopeBlock* paren
             case StatementType::Assignment:
             {
                 AssignmentStatementNode* assignment_node = (AssignmentStatementNode*)statement.get();
-                VariableAllocation variable = current_scope.getLocalVariable(assignment_node->name);
-                llvm::Value* value = this->generate_expression(current_builder, &current_scope, assignment_node->expression, variable.type);
-                current_builder->CreateStore(value, variable.allocation);
+                llvm::AllocaInst* variable = current_scope.getLocalVariable(assignment_node->name);
+                llvm::Value* value = this->generate_expression(current_builder, &current_scope, assignment_node->expression);
+                current_builder->CreateStore(value, variable);
             }
                 break;
             case StatementType::Block:
-                if(this->generate_block(current_builder, &current_scope, ((BlockStatementNode*)statement.get())->block, return_type) == BlockResult::Returned);
+                if(this->generate_block(current_builder, &current_scope, ((BlockStatementNode*)statement.get())->block) == BlockResult::Returned);
                 {
                     return BlockResult::Returned;
                 }
@@ -135,7 +153,7 @@ BlockResult Module::generate_block(llvm::IRBuilder<>* builder, ScopeBlock* paren
             {
                 IfStatementNode* if_statement_node = (IfStatementNode*)statement.get();
                 llvm::Type* temp_type = llvm::Type::getInt32Ty(*this->context);//TODO dynamic if condition type
-                llvm::Value* condition_value = this->generate_expression(current_builder, &current_scope, if_statement_node->condition, shared_ptr<Type>());
+                llvm::Value* condition_value = this->generate_expression(current_builder, &current_scope, if_statement_node->condition);
                 condition_value = current_builder->CreateICmpNE(condition_value, llvm::ConstantInt::get(temp_type, 0));
                 llvm::Function* function = current_builder->GetInsertBlock()->getParent();
 
@@ -146,7 +164,7 @@ BlockResult Module::generate_block(llvm::IRBuilder<>* builder, ScopeBlock* paren
                     llvm::BasicBlock* continue_block = llvm::BasicBlock::Create(current_builder->getContext(), "if_continue", function);
 
                     llvm::IRBuilder<> if_builder(if_block);
-                    if(this->generate_block(&if_builder, &current_scope, if_statement_node->if_block, return_type) != BlockResult::Returned)
+                    if(this->generate_block(&if_builder, &current_scope, if_statement_node->if_block) != BlockResult::Returned)
                     {
                         if_builder.CreateBr(continue_block);
                     }
@@ -162,13 +180,13 @@ BlockResult Module::generate_block(llvm::IRBuilder<>* builder, ScopeBlock* paren
                     llvm::BasicBlock* continue_block = llvm::BasicBlock::Create(current_builder->getContext(), "if_continue", function);
 
                     llvm::IRBuilder<> if_builder(if_block);
-                    if(this->generate_block(&if_builder, &current_scope, if_statement_node->if_block, return_type) != BlockResult::Returned)
+                    if(this->generate_block(&if_builder, &current_scope, if_statement_node->if_block) != BlockResult::Returned)
                     {
                         if_builder.CreateBr(continue_block);
                     }
 
                     llvm::IRBuilder<> else_builder(else_block);
-                    if(this->generate_block(&else_builder, &current_scope, if_statement_node->else_block, return_type) != BlockResult::Returned)
+                    if(this->generate_block(&else_builder, &current_scope, if_statement_node->else_block) != BlockResult::Returned)
                     {
                         else_builder.CreateBr(continue_block);
                     }
@@ -186,7 +204,7 @@ BlockResult Module::generate_block(llvm::IRBuilder<>* builder, ScopeBlock* paren
                 llvm::Value* return_value = nullptr;
                 if(return_statement->return_expression)
                 {
-                    return_value = this->generate_expression(current_builder, &current_scope, return_statement->return_expression, return_type);
+                    return_value = this->generate_expression(current_builder, &current_scope, return_statement->return_expression);
                 }
                 current_builder->CreateRet(return_value);
                 return BlockResult::Returned;
@@ -196,46 +214,74 @@ BlockResult Module::generate_block(llvm::IRBuilder<>* builder, ScopeBlock* paren
     return BlockResult::None;
 }
 
-llvm::Value* Module::generate_expression(llvm::IRBuilder<>* builder, ScopeBlock* current_scope, unique_ptr<ExpressionNode>& expression, shared_ptr<Type> expected_type)
+llvm::Value* Module::generate_expression(llvm::IRBuilder<>* builder, ScopeBlock* current_scope, unique_ptr<ExpressionNode>& expression)
 {
     switch (expression->expression_type)
     {
         case ExpressionType::ConstInt:
         {
-            IntType* int_type = (IntType*)expected_type.get();
-            return llvm::ConstantInt::get(this->getType(expected_type), ((ConstantIntegerExpressionNode*)expression.get())->value, int_type->is_signed());
+            ConstantIntegerExpressionNode* int_node = (ConstantIntegerExpressionNode*)expression.get();
+            IntType* int_type = (IntType*)int_node->int_type.get();
+            return llvm::ConstantInt::get(this->getType(int_node->int_type), int_node->value, int_type->is_signed());
         }
         case ExpressionType::ConstFloat:
         {
             ConstantDoubleExpressionNode* const_float = (ConstantDoubleExpressionNode*)expression.get();
-            return llvm::ConstantFP::get(this->getType(expected_type), 0.0);//TODO use newer method
+            return llvm::ConstantFP::get(this->getType(const_float->float_type), const_float->value);
         }
         case ExpressionType::Identifier:
-            return builder->CreateLoad(current_scope->getLocalVariable(((IdentifierExpressionNode*)expression.get())->identifier_name).allocation, "load");
+            return builder->CreateLoad(current_scope->getLocalVariable(((IdentifierExpressionNode*)expression.get())->identifier_name), "load");
         case ExpressionType::Function:
         {
             FunctionCallExpressionNode* function_call = (FunctionCallExpressionNode*)expression.get();
             llvm::Function* called_function = this->module->getFunction(function_call->function_name);
-            return builder->CreateCall(called_function);
+            vector<llvm::Value*> arguments(function_call->arguments.size());
+            for(size_t i = 0; i < function_call->arguments.size(); i++)
+            {
+                arguments[i] = this->generate_expression(builder, current_scope, function_call->arguments[i]);
+            }
+
+            return builder->CreateCall(called_function, arguments);
         }
         case ExpressionType::BinaryOperator:
         {
-            //TODO take into account signed/unsigned, floats, struct operator overloading
             BinaryOperatorExpressionNode* bin_op = (BinaryOperatorExpressionNode*)expression.get();
-            llvm::Instruction::BinaryOps instr;
-            switch (bin_op->op)
-            {
-                case MathOperator::ADD: instr = llvm::Instruction::Add; break;
-                case MathOperator::SUB: instr = llvm::Instruction::Sub; break;
-                case MathOperator::MUL: instr = llvm::Instruction::Mul; break;
-                case MathOperator::DIV: instr = llvm::Instruction::UDiv; break;
-                case MathOperator::MOD: instr = llvm::Instruction::URem; break;
-            }
-            llvm::Value* lhs_value = this->generate_expression(builder, current_scope, bin_op->lhs, expected_type);
-            llvm::Value* rhs_value = this->generate_expression(builder, current_scope, bin_op->rhs, expected_type);
+            llvm::Value* lhs_value = this->generate_expression(builder, current_scope, bin_op->lhs);
+            llvm::Value* rhs_value = this->generate_expression(builder, current_scope, bin_op->rhs);
 
-            //Only works for unsigned ints right now
-            return builder->CreateBinOp(instr, lhs_value, rhs_value);
+            switch (bin_op->binary_op)
+            {
+                case BinaryOperator::Iadd:
+                    return builder->CreateBinOp(llvm::Instruction::Add, lhs_value, rhs_value);
+                case BinaryOperator::Isub:
+                    return builder->CreateBinOp(llvm::Instruction::Sub, lhs_value, rhs_value);
+                case BinaryOperator::Imul:
+                    return builder->CreateBinOp(llvm::Instruction::Mul, lhs_value, rhs_value);
+                case BinaryOperator::Idiv:
+                    return builder->CreateBinOp(llvm::Instruction::SDiv, lhs_value, rhs_value);
+                case BinaryOperator::Imod:
+                    return builder->CreateBinOp(llvm::Instruction::SRem, lhs_value, rhs_value);
+                case BinaryOperator::Udiv:
+                    return builder->CreateBinOp(llvm::Instruction::UDiv, lhs_value, rhs_value);
+                case BinaryOperator::Umod:
+                    return builder->CreateBinOp(llvm::Instruction::URem, lhs_value, rhs_value);
+
+                case BinaryOperator::Fadd:
+                    return builder->CreateBinOp(llvm::Instruction::FAdd, lhs_value, rhs_value);
+                case BinaryOperator::Fsub:
+                    return builder->CreateBinOp(llvm::Instruction::FSub, lhs_value, rhs_value);
+                case BinaryOperator::Fmul:
+                    return builder->CreateBinOp(llvm::Instruction::FMul, lhs_value, rhs_value);
+                case BinaryOperator::Fdiv:
+                    return builder->CreateBinOp(llvm::Instruction::FDiv, lhs_value, rhs_value);
+                case BinaryOperator::Fmod:
+                    return builder->CreateBinOp(llvm::Instruction::FRem, lhs_value, rhs_value);
+
+                case BinaryOperator::Function:
+                    //TODO
+                default:
+                    return nullptr;
+            }
         }
     }
 

@@ -1,5 +1,76 @@
 #include "ast_resolver.hpp"
 
+void GlobalScope::add_function(const string &name, const FunctionType& function_type)
+{
+    if(this->functions_types.find(name) != this->functions_types.end())
+    {
+        printf("Error: Function %s redefined\n", name.c_str());
+        exit(-1);
+    }
+
+    this->functions_types[name] = function_type;
+}
+
+FunctionType GlobalScope::get_function_type(const string &name)
+{
+    auto find_it = this->functions_types.find(name);
+    if(find_it != this->functions_types.end())
+    {
+        return find_it->second;
+    }
+
+    printf("Error: No variable with name %s \n", name.c_str());
+    exit(-1);
+}
+
+LocalScope::LocalScope(LocalScope *parent_scope, GlobalScope* global_scope)
+:parent_scope(parent_scope)
+{
+    if(parent_scope != nullptr)
+    {
+        this->global_scope = parent_scope->global_scope;
+    }
+    else
+    {
+        this->global_scope = global_scope;
+    }
+}
+
+void LocalScope::add_variable(const string &name, shared_ptr<Type> variable_type)
+{
+    if(this->variable_types.find(name) != this->variable_types.end())
+    {
+        printf("Error: Variable %s redefined\n", name.c_str());
+        exit(-1);
+    }
+
+    this->variable_types[name] = variable_type;
+}
+
+shared_ptr<Type> LocalScope::get_variable_type(const string &name)
+{
+    auto find_it = this->variable_types.find(name);
+    if(find_it != this->variable_types.end())
+    {
+        return find_it->second;
+    }
+    else
+    {
+        if(this->parent_scope != nullptr)
+        {
+            return this->parent_scope->get_variable_type(name);
+        }
+    }
+
+    printf("Error: No variable with name %s \n", name.c_str());
+    exit(-1);
+}
+
+FunctionType LocalScope::get_function_type(const string &name)
+{
+    return this->global_scope->get_function_type(name);
+}
+
 AstResolver::AstResolver()
 {
     //Add Primitive Types
@@ -18,57 +89,86 @@ AstResolver::AstResolver()
     //this->type_map["void"] = llvm::Type::getVoidTy(*this->context);
 }
 
-
+//This (admittedly poorly named) function will process the whole module and remove any ambiguity from the AST.
+//Most notably this function will determine the appropriate Bin Op to use
 void AstResolver::resolve(ModuleNode* module)
 {
-    //Resolve string types for all functions
+    GlobalScope global_scope;
+
     for(auto& function: module->functions)
     {
-        this->resolve_types_function(function);
+        this->resolve_types_function(function, &global_scope);
+    }
+
+    for(auto& function: module->functions)
+    {
+        this->resolve_types_function_block(function, &global_scope);
     }
 
     //TODO process constant expressions to determine exact and value
-
-
     //TODO process operators and create the expressions for those specific operations (ie int add, float add, func call)
-    //TODO process condition expressions to create required casting/comparisons
+    //TODO process condition expressions to create required casting/comparisons for If/Loop statements
 }
 
-void AstResolver::resolve_types_function(unique_ptr<FunctionNode> &function)
+void AstResolver::resolve_types_function(unique_ptr<FunctionNode> &function, GlobalScope* global_scope)
 {
-    //Resolve return and argument types
+    FunctionType function_type;
+
     function->return_type = this->resolve_type(function->return_type);
-    this->resolve_types_block(function, function->block);
+    function_type.return_type = function->return_type;
+
+    for(size_t i = 0; i < function->parameters.size(); i++)
+    {
+        function->parameters[i].type = this->resolve_type(function->parameters[i].type);
+        function_type.arguments.push_back(function->parameters[i].type);
+    }
+    global_scope->add_function(function->name, function_type);
 }
 
-void AstResolver::resolve_types_block(unique_ptr<FunctionNode>& function, unique_ptr<BlockNode>& block)
+
+void AstResolver::resolve_types_function_block(unique_ptr<FunctionNode> &function, GlobalScope *global_scope)
 {
+    //TODO add global variables
+    LocalScope function_scope(nullptr, global_scope);
+    for(FunctionParameter& parameter: function->parameters)
+    {
+        function_scope.add_variable(parameter.name, parameter.type);
+    }
+    this->resolve_types_block(function, function->block, &function_scope);
+}
+
+void AstResolver::resolve_types_block(unique_ptr<FunctionNode>& function, unique_ptr<BlockNode>& block, LocalScope* parent_scope)
+{
+    LocalScope block_scope(parent_scope);
+
     for(unique_ptr<StatementNode>& statement: block->statements)
     {
         switch (statement->statement_type)
         {
             case StatementType::Declaration:
             {
-                DeclarationStatementNode *declaration_node = (DeclarationStatementNode *) statement.get();
+                DeclarationStatementNode *declaration_node = (DeclarationStatementNode *)statement.get();
                 declaration_node->type = this->resolve_type(declaration_node->type);
-                this->resolve_types_expression(declaration_node->expression, declaration_node->type);
+                this->resolve_types_expression(declaration_node->expression, declaration_node->type, &block_scope);
+                block_scope.add_variable(declaration_node->name, declaration_node->type);
             }
                 break;
             case StatementType::Assignment:
             {
-                //AssignmentStatementNode* assignment_node = (AssignmentStatementNode*)statement.get();
+                AssignmentStatementNode* assignment_node = (AssignmentStatementNode*)statement.get();
+                shared_ptr<Type> type = block_scope.get_variable_type(assignment_node->name);
+                this->resolve_types_expression(assignment_node->expression, type, &block_scope);
             }
                 break;
             case StatementType::Block:
-                this->resolve_types_block(function, ((BlockStatementNode*)statement.get())->block);
+                this->resolve_types_block(function, ((BlockStatementNode*)statement.get())->block, &block_scope);
                 break;
             case StatementType::If:
                 break;
             case StatementType::While:
                 break;
             case StatementType::Return:
-                //TODO
-                this->resolve_types_expression(((ReturnStatmentNode*)statement.get())->return_expression, function->return_type);
+                this->resolve_types_expression(((ReturnStatmentNode*)statement.get())->return_expression, function->return_type, &block_scope);
                 break;
         }
     }
@@ -88,20 +188,163 @@ shared_ptr<Type> AstResolver::resolve_type(shared_ptr<Type> unresolved_type)
     return iterator->second;
 }
 
-void AstResolver::resolve_types_expression(unique_ptr<ExpressionNode>& expression, shared_ptr<Type> required_type)
+TypeClass get_type_class(unique_ptr<ExpressionNode>& expression, LocalScope* local_scope)
 {
     switch (expression->expression_type)
     {
+        case ExpressionType::ConstInt:
+            return TypeClass::Int;
         case ExpressionType::ConstFloat:
+            return TypeClass::Float;
+        case ExpressionType::Identifier:
+            return local_scope->get_variable_type(((IdentifierExpressionNode*) expression.get())->identifier_name)->get_class();
+        case ExpressionType::BinaryOperator:
+        {
+            BinaryOperatorExpressionNode* bin_op = (BinaryOperatorExpressionNode*)expression.get();
+            return get_type_class(bin_op->lhs, local_scope);
+        }
+        case ExpressionType::Function:
+            return local_scope->get_function_type(((FunctionCallExpressionNode*)expression.get())->function_name).return_type->get_class();
+    }
+
+    return TypeClass::Invalid;
+}
+
+void AstResolver::resolve_types_expression(unique_ptr<ExpressionNode>& expression, shared_ptr<Type> required_type, LocalScope* local_scope)
+{
+    switch (expression->expression_type)
+    {
+        case ExpressionType::ConstInt:
+        {
+            ConstantIntegerExpressionNode* const_int = (ConstantIntegerExpressionNode*)expression.get();
+            const_int->resolve_value(required_type);
+        }
+            break;
+        case ExpressionType::ConstFloat:
+        {
+            ConstantDoubleExpressionNode* const_float = (ConstantDoubleExpressionNode*)expression.get();
+            const_float->resolve_value(required_type);
+        }
+            break;
+        case ExpressionType::Identifier:
+        {
+            shared_ptr<Type> variable_type = local_scope->get_variable_type(((IdentifierExpressionNode*) expression.get())->identifier_name);
+            if(variable_type != required_type)
             {
-                ConstantDoubleExpressionNode* const_float = (ConstantDoubleExpressionNode*)expression.get();
-                const_float->resolve_value(required_type);
+                printf("Error: type mismatch");
+                exit(-1);
             }
+        }
             break;
         case ExpressionType::Function:
+        {
+            FunctionCallExpressionNode* function_call = (FunctionCallExpressionNode*)expression.get();
+            FunctionType function_type = local_scope->get_function_type(function_call->function_name);
+
+            if(required_type != function_type.return_type)
+            {
+                printf("Error: type mismatch!!!\n");
+                exit(-1);
+            }
+
+            for(size_t i = 0; i < function_type.arguments.size(); i++)
+            {
+                this->resolve_types_expression(function_call->arguments[i], function_type.arguments[i], local_scope);
+            }
+        }
             break;
         case ExpressionType::BinaryOperator:
-            //Determine which bin op to use
+        {
+            BinaryOperatorExpressionNode* bin_op_node = (BinaryOperatorExpressionNode*) expression.get();
+            TypeClass lhs_type = get_type_class(bin_op_node->lhs, local_scope);
+
+            //In the case of int or float, both lhs and rhs are assumed to be the same type and that type should match the required type
+            if(lhs_type == TypeClass::Int)
+            {
+                IntType* int_type = (IntType*) required_type.get();
+                this->resolve_types_expression(bin_op_node->lhs, required_type, local_scope);
+                this->resolve_types_expression(bin_op_node->rhs, required_type, local_scope);
+
+                switch (bin_op_node->op)
+                {
+                    case MathOperator::ADD:
+                        bin_op_node->binary_op = BinaryOperator::Iadd;
+                        break;
+                    case MathOperator::SUB:
+                        bin_op_node->binary_op = BinaryOperator::Isub;
+                        break;
+                    case MathOperator::MUL:
+                        bin_op_node->binary_op = BinaryOperator::Imul;
+                        break;
+                    case MathOperator::DIV:
+                    {
+                        if (int_type->is_signed())
+                        {
+                            bin_op_node->binary_op = BinaryOperator::Idiv;
+                        }
+                        else
+                        {
+                            bin_op_node->binary_op = BinaryOperator::Udiv;
+                        }
+                    }
+                        break;
+                    case MathOperator::MOD:
+                    {
+                        if (int_type->is_signed())
+                        {
+                            bin_op_node->binary_op = BinaryOperator::Imod;
+                        }
+                        else
+                        {
+                            bin_op_node->binary_op = BinaryOperator::Umod;
+                        }
+                    }
+                        break;
+                }
+            }
+            else if(lhs_type == TypeClass::Float)
+            {
+                this->resolve_types_expression(bin_op_node->lhs, required_type, local_scope);
+                this->resolve_types_expression(bin_op_node->rhs, required_type, local_scope);
+
+                switch (bin_op_node->op)
+                {
+                    case MathOperator::ADD:
+                        bin_op_node->binary_op = BinaryOperator::Fadd;
+                        break;
+                    case MathOperator::SUB:
+                        bin_op_node->binary_op = BinaryOperator::Fsub;
+                        break;
+                    case MathOperator::MUL:
+                        bin_op_node->binary_op = BinaryOperator::Fmul;
+                        break;
+                    case MathOperator::DIV:
+                        bin_op_node->binary_op = BinaryOperator::Fdiv;
+                        break;
+                    case MathOperator::MOD:
+                        bin_op_node->binary_op = BinaryOperator::Fmod;
+                        break;
+                }
+            }
+            else if(lhs_type == TypeClass::Struct)
+            {
+                //TODO
+            }
+
+            /* If lhs type class is int:
+             * - resolve lhs for required_type, error if not a type_match
+             * - resolve rhs for required_type, error if not a type_match
+             * - determine correct int op (signed or unsigned)
+             *
+             * If lhs type class is float:
+             * - resolve lhs for required_type, error if not a type_match
+             * - resolve rhs for required_type, error if not a type_match
+             * - determine correct float op
+             *
+             * TODO If lhs type class is struct
+             * - Will have to determine correct operator overload function based on type of LHS and return_type/required_type
+             * */
+        }
             break;
     }
 }
