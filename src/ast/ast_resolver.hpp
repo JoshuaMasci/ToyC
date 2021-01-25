@@ -1,7 +1,7 @@
 #pragma once
 
 #include "types.hpp"
-#include "ast/node.hpp"
+#include "ast/module.hpp"
 #include "ast/expression.hpp"
 
 struct FunctionType
@@ -39,15 +39,16 @@ class AstResolver
 public:
     AstResolver();
 
-    void resolve(ModuleNode* module);
+    void resolve(Module* module);
 
 protected:
     unordered_map<string, shared_ptr<Type>> type_map;
 
-    void resolve_types_function(unique_ptr<FunctionNode>& function, GlobalScope* global_scope);
-    void resolve_types_function_block(unique_ptr<FunctionNode>& function, GlobalScope* global_scope);
-    void resolve_types_block(unique_ptr<FunctionNode> &function, unique_ptr<BlockNode>& block, LocalScope* parent_scope);
+    void resolve_types_extern(unique_ptr<ExternFunction> &function, GlobalScope* global_scope);
+    void resolve_types_function(unique_ptr<Function>& function, GlobalScope* global_scope);
+    void resolve_types_function_block(unique_ptr<Function>& function, GlobalScope* global_scope);
+    void resolve_types_block(unique_ptr<Function> &function, unique_ptr<Block>& block, LocalScope* parent_scope);
     shared_ptr<Type> resolve_type(shared_ptr<Type> unresolved_type);
 
-    void resolve_types_expression(unique_ptr<ExpressionNode>& expression, shared_ptr<Type> required_type, LocalScope* local_scope);
+    void resolve_types_expression(unique_ptr<Expression>& expression, shared_ptr<Type> required_type, LocalScope* local_scope);
 };

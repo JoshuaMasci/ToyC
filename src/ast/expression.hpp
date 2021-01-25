@@ -41,19 +41,19 @@ enum class ExpressionType
     BinaryOperator,
 };
 
-struct ExpressionNode
+struct Expression
 {
-    ExpressionNode(ExpressionType type) : expression_type(type){};
+    Expression(ExpressionType type) : expression_type(type){};
     const ExpressionType expression_type;
 };
 
-struct ConstantIntegerExpressionNode : ExpressionNode
+struct ConstantIntegerExpression : Expression
 {
     shared_ptr<Type> int_type;
     uint64_t value;
 
-    ConstantIntegerExpressionNode(long value)
-    :ExpressionNode(ExpressionType::ConstInt)
+    ConstantIntegerExpression(long value)
+    :Expression(ExpressionType::ConstInt)
     {
         this->value = value;
     };
@@ -70,13 +70,13 @@ struct ConstantIntegerExpressionNode : ExpressionNode
     }
 };
 
-struct ConstantDoubleExpressionNode : ExpressionNode
+struct ConstantDoubleExpression : Expression
 {
     shared_ptr<Type> float_type;
     double value;
 
-    ConstantDoubleExpressionNode(double value)
-    :ExpressionNode(ExpressionType::ConstFloat)
+    ConstantDoubleExpression(double value)
+    :Expression(ExpressionType::ConstFloat)
     {
         this->value = value;
     };
@@ -93,25 +93,25 @@ struct ConstantDoubleExpressionNode : ExpressionNode
     }
 };
 
-struct IdentifierExpressionNode : ExpressionNode
+struct IdentifierExpression : Expression
 {
     std::string identifier_name;
 
-    IdentifierExpressionNode(const string& name)
-    :ExpressionNode(ExpressionType::Identifier)
+    IdentifierExpression(const string& name)
+    :Expression(ExpressionType::Identifier)
     {
         this->identifier_name = name;
     }
 };
 
-typedef vector<ExpressionNode*> FunctionArguments;
-struct FunctionCallExpressionNode : ExpressionNode
+typedef vector<Expression*> FunctionArguments;
+struct FunctionCallExpression : Expression
 {
     std::string function_name;
-    vector<unique_ptr<ExpressionNode>> arguments;
+    vector<unique_ptr<Expression>> arguments;
 
-    FunctionCallExpressionNode(const string& name, FunctionArguments* argument_list = nullptr)
-    :ExpressionNode(ExpressionType::Function)
+    FunctionCallExpression(const string& name, FunctionArguments* argument_list = nullptr)
+    :Expression(ExpressionType::Function)
     {
         this->function_name = name;
 
@@ -120,26 +120,25 @@ struct FunctionCallExpressionNode : ExpressionNode
             arguments.resize(argument_list->size());
             for(size_t i = 0; i < arguments.size(); i++)
             {
-                arguments[i] = unique_ptr<ExpressionNode>(argument_list->at(i));
+                arguments[i] = unique_ptr<Expression>(argument_list->at(i));
             }
             delete argument_list;
         }
     }
 };
 
-struct BinaryOperatorExpressionNode : ExpressionNode
+struct BinaryOperatorExpression : Expression
 {
     MathOperator op;
     BinaryOperator binary_op = BinaryOperator::Invalid;
-    unique_ptr<ExpressionNode> lhs;
-    unique_ptr<ExpressionNode> rhs;
+    unique_ptr<Expression> lhs;
+    unique_ptr<Expression> rhs;
 
-    BinaryOperatorExpressionNode(MathOperator op, ExpressionNode* l, ExpressionNode* r)
-    :ExpressionNode(ExpressionType::BinaryOperator)
+    BinaryOperatorExpression(MathOperator op, Expression* l, Expression* r)
+    :Expression(ExpressionType::BinaryOperator)
     {
-        //printf("BinaryOperatorExpressionNode op: %d\n", (int)op);
         this->op = op;
-        this->lhs = unique_ptr<ExpressionNode>(l);
-        this->rhs = unique_ptr<ExpressionNode>(r);
+        this->lhs = unique_ptr<Expression>(l);
+        this->rhs = unique_ptr<Expression>(r);
     };
 };

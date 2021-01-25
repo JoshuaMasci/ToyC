@@ -74,6 +74,7 @@ FunctionType LocalScope::get_function_type(const string &name)
 AstResolver::AstResolver()
 {
     //Add Primitive Types
+    this->type_map["void"] = std::make_shared<VoidType>();
     this->type_map["bool"] = std::make_shared<IntType>(TypeEnum::Bool);
     this->type_map["char"] = std::make_shared<IntType>(TypeEnum::Char8);
     this->type_map["u8"] = std::make_shared<IntType>(TypeEnum::Uint8);
@@ -86,14 +87,18 @@ AstResolver::AstResolver()
     this->type_map["i64"] = std::make_shared<IntType>(TypeEnum::Int64);
     this->type_map["f32"] = std::make_shared<FloatType>(true);
     this->type_map["f64"] = std::make_shared<FloatType>(false);
-    //this->type_map["void"] = llvm::Type::getVoidTy(*this->context);
 }
 
 //This (admittedly poorly named) function will process the whole module and remove any ambiguity from the AST.
 //Most notably this function will determine the appropriate Bin Op to use
-void AstResolver::resolve(ModuleNode* module)
+void AstResolver::resolve(Module* module)
 {
     GlobalScope global_scope;
+
+    for(auto& function: module->extern_functions)
+    {
+        this->resolve_types_extern(function, &global_scope);
+    }
 
     for(auto& function: module->functions)
     {
@@ -105,12 +110,25 @@ void AstResolver::resolve(ModuleNode* module)
         this->resolve_types_function_block(function, &global_scope);
     }
 
-    //TODO process constant expressions to determine exact and value
-    //TODO process operators and create the expressions for those specific operations (ie int add, float add, func call)
     //TODO process condition expressions to create required casting/comparisons for If/Loop statements
 }
 
-void AstResolver::resolve_types_function(unique_ptr<FunctionNode> &function, GlobalScope* global_scope)
+void AstResolver::resolve_types_extern(unique_ptr<ExternFunction>& function, GlobalScope* global_scope)
+{
+    FunctionType function_type;
+
+    function->return_type = this->resolve_type(function->return_type);
+    function_type.return_type = function->return_type;
+
+    for(size_t i = 0; i < function->parameters.size(); i++)
+    {
+        function->parameters[i].type = this->resolve_type(function->parameters[i].type);
+        function_type.arguments.push_back(function->parameters[i].type);
+    }
+    global_scope->add_function(function->name, function_type);
+}
+
+void AstResolver::resolve_types_function(unique_ptr<Function> &function, GlobalScope* global_scope)
 {
     FunctionType function_type;
 
@@ -126,7 +144,7 @@ void AstResolver::resolve_types_function(unique_ptr<FunctionNode> &function, Glo
 }
 
 
-void AstResolver::resolve_types_function_block(unique_ptr<FunctionNode> &function, GlobalScope *global_scope)
+void AstResolver::resolve_types_function_block(unique_ptr<Function> &function, GlobalScope *global_scope)
 {
     //TODO add global variables
     LocalScope function_scope(nullptr, global_scope);
@@ -137,17 +155,17 @@ void AstResolver::resolve_types_function_block(unique_ptr<FunctionNode> &functio
     this->resolve_types_block(function, function->block, &function_scope);
 }
 
-void AstResolver::resolve_types_block(unique_ptr<FunctionNode>& function, unique_ptr<BlockNode>& block, LocalScope* parent_scope)
+void AstResolver::resolve_types_block(unique_ptr<Function>& function, unique_ptr<Block>& block, LocalScope* parent_scope)
 {
     LocalScope block_scope(parent_scope);
 
-    for(unique_ptr<StatementNode>& statement: block->statements)
+    for(unique_ptr<Statement>& statement: block->statements)
     {
         switch (statement->statement_type)
         {
             case StatementType::Declaration:
             {
-                DeclarationStatementNode *declaration_node = (DeclarationStatementNode *)statement.get();
+                DeclarationStatement *declaration_node = (DeclarationStatement *)statement.get();
                 declaration_node->type = this->resolve_type(declaration_node->type);
                 this->resolve_types_expression(declaration_node->expression, declaration_node->type, &block_scope);
                 block_scope.add_variable(declaration_node->name, declaration_node->type);
@@ -155,20 +173,31 @@ void AstResolver::resolve_types_block(unique_ptr<FunctionNode>& function, unique
                 break;
             case StatementType::Assignment:
             {
-                AssignmentStatementNode* assignment_node = (AssignmentStatementNode*)statement.get();
+                AssignmentStatement* assignment_node = (AssignmentStatement*)statement.get();
                 shared_ptr<Type> type = block_scope.get_variable_type(assignment_node->name);
                 this->resolve_types_expression(assignment_node->expression, type, &block_scope);
             }
                 break;
             case StatementType::Block:
-                this->resolve_types_block(function, ((BlockStatementNode*)statement.get())->block, &block_scope);
+                this->resolve_types_block(function, ((BlockStatement*)statement.get())->block, &block_scope);
+                break;
+            case StatementType::FunctionCall:
+            {
+                //Function Call statement doesn't care about return type
+                FunctionCallStatement* function_call = (FunctionCallStatement*)statement.get();
+                FunctionType function_type = block_scope.get_function_type(function_call->function_name);
+                for(size_t i = 0; i < function_call->arguments.size(); i++)
+                {
+                    this->resolve_types_expression(function_call->arguments[i], function_type.arguments[i], &block_scope);
+                }
+            }
                 break;
             case StatementType::If:
                 break;
             case StatementType::While:
                 break;
             case StatementType::Return:
-                this->resolve_types_expression(((ReturnStatmentNode*)statement.get())->return_expression, function->return_type, &block_scope);
+                this->resolve_types_expression(((ReturnStatement*)statement.get())->return_expression, function->return_type, &block_scope);
                 break;
         }
     }
@@ -183,12 +212,10 @@ shared_ptr<Type> AstResolver::resolve_type(shared_ptr<Type> unresolved_type)
         printf("Error: cannot resolve type: %s\n", name.c_str());
         exit(-1);
     }
-    printf("Resolved %s to %d\n", name.c_str(), iterator->second->get_type());
-
     return iterator->second;
 }
 
-TypeClass get_type_class(unique_ptr<ExpressionNode>& expression, LocalScope* local_scope)
+TypeClass get_type_class(unique_ptr<Expression>& expression, LocalScope* local_scope)
 {
     switch (expression->expression_type)
     {
@@ -197,38 +224,38 @@ TypeClass get_type_class(unique_ptr<ExpressionNode>& expression, LocalScope* loc
         case ExpressionType::ConstFloat:
             return TypeClass::Float;
         case ExpressionType::Identifier:
-            return local_scope->get_variable_type(((IdentifierExpressionNode*) expression.get())->identifier_name)->get_class();
+            return local_scope->get_variable_type(((IdentifierExpression*) expression.get())->identifier_name)->get_class();
         case ExpressionType::BinaryOperator:
         {
-            BinaryOperatorExpressionNode* bin_op = (BinaryOperatorExpressionNode*)expression.get();
+            BinaryOperatorExpression* bin_op = (BinaryOperatorExpression*)expression.get();
             return get_type_class(bin_op->lhs, local_scope);
         }
         case ExpressionType::Function:
-            return local_scope->get_function_type(((FunctionCallExpressionNode*)expression.get())->function_name).return_type->get_class();
+            return local_scope->get_function_type(((FunctionCallExpression*)expression.get())->function_name).return_type->get_class();
     }
 
     return TypeClass::Invalid;
 }
 
-void AstResolver::resolve_types_expression(unique_ptr<ExpressionNode>& expression, shared_ptr<Type> required_type, LocalScope* local_scope)
+void AstResolver::resolve_types_expression(unique_ptr<Expression>& expression, shared_ptr<Type> required_type, LocalScope* local_scope)
 {
     switch (expression->expression_type)
     {
         case ExpressionType::ConstInt:
         {
-            ConstantIntegerExpressionNode* const_int = (ConstantIntegerExpressionNode*)expression.get();
+            ConstantIntegerExpression* const_int = (ConstantIntegerExpression*)expression.get();
             const_int->resolve_value(required_type);
         }
             break;
         case ExpressionType::ConstFloat:
         {
-            ConstantDoubleExpressionNode* const_float = (ConstantDoubleExpressionNode*)expression.get();
+            ConstantDoubleExpression* const_float = (ConstantDoubleExpression*)expression.get();
             const_float->resolve_value(required_type);
         }
             break;
         case ExpressionType::Identifier:
         {
-            shared_ptr<Type> variable_type = local_scope->get_variable_type(((IdentifierExpressionNode*) expression.get())->identifier_name);
+            shared_ptr<Type> variable_type = local_scope->get_variable_type(((IdentifierExpression*) expression.get())->identifier_name);
             if(variable_type != required_type)
             {
                 printf("Error: type mismatch");
@@ -238,7 +265,7 @@ void AstResolver::resolve_types_expression(unique_ptr<ExpressionNode>& expressio
             break;
         case ExpressionType::Function:
         {
-            FunctionCallExpressionNode* function_call = (FunctionCallExpressionNode*)expression.get();
+            FunctionCallExpression* function_call = (FunctionCallExpression*)expression.get();
             FunctionType function_type = local_scope->get_function_type(function_call->function_name);
 
             if(required_type != function_type.return_type)
@@ -255,7 +282,7 @@ void AstResolver::resolve_types_expression(unique_ptr<ExpressionNode>& expressio
             break;
         case ExpressionType::BinaryOperator:
         {
-            BinaryOperatorExpressionNode* bin_op_node = (BinaryOperatorExpressionNode*) expression.get();
+            BinaryOperatorExpression* bin_op_node = (BinaryOperatorExpression*) expression.get();
             TypeClass lhs_type = get_type_class(bin_op_node->lhs, local_scope);
 
             //In the case of int or float, both lhs and rhs are assumed to be the same type and that type should match the required type

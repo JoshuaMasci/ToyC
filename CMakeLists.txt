@@ -8,6 +8,8 @@ FIND_PACKAGE(FLEX REQUIRED)
 
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+message(STATUS "LLVM_DEFINITIONS: ${LLVM_DEFINITIONS}")
+
 
 add_definitions(${LLVM_DEFINITIONS})
 
@@ -24,6 +26,12 @@ message("${sources}")
 add_executable(ToyC ${sources} ${BISON_Parser_OUTPUTS} ${FLEX_Tokens_OUTPUTS})
 
 target_include_directories(ToyC PUBLIC ${LLVM_INCLUDE_DIRS})
-llvm_map_components_to_libnames(llvm_libs core native support mcjit executionengine)
+llvm_map_components_to_libnames(llvm_libs
+        core
+        native
+        backend
+        all
+        support
+        )
 target_link_libraries(ToyC PUBLIC ${llvm_libs})
 

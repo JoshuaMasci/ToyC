@@ -13,6 +13,7 @@ enum class TypeClass
 enum class TypeEnum
 {
     Invalid = 0,
+    Void,
     Bool,
     Char8,
     Uint8,
@@ -33,6 +34,13 @@ class Type
 public:
     virtual TypeClass get_class() = 0;
     virtual TypeEnum get_type() = 0;
+};
+
+class VoidType: public Type
+{
+public:
+    TypeClass get_class() override { return TypeClass::Invalid; };
+    TypeEnum get_type() override { return TypeEnum::Void; };
 };
 
 class UnresolvedType: public Type

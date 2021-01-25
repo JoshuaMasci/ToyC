@@ -1,8 +1,6 @@
 %{
     #include "string_cache.hpp"
-    #include "ast/node.hpp"
-    #include "ast/expression.hpp"
-    #include "ast/statement.hpp"
+    #include "ast/module.hpp"
     #include "parser.hpp"
     #include <stdio.h>
 %}

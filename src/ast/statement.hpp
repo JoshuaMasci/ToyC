@@ -2,105 +2,131 @@
 
 #include "containers.hpp"
 #include "ast/expression.hpp"
-#include "ast/type.hpp"
 
 enum class StatementType
 {
     Declaration,
     Assignment,
     Block,
+    FunctionCall,
     If,
     While,
     Return,
 };
 
-struct BlockNode;
-
-struct StatementNode
+struct Statement
 {
-    StatementNode(StatementType type) : statement_type(type){};
+    Statement(StatementType type) : statement_type(type){};
     const StatementType statement_type;
 };
 
-struct DeclarationStatementNode : StatementNode
+struct Block
+{
+    vector<unique_ptr<Statement>> statements;
+
+    void push_back(Statement* statement)
+    {
+        this->statements.push_back(unique_ptr<Statement>(statement));
+    };
+};
+
+struct DeclarationStatement : Statement
 {
     shared_ptr<Type> type;
 
     std::string name;
-    unique_ptr<ExpressionNode> expression;
+    unique_ptr<Expression> expression;
 
-    DeclarationStatementNode(const string& type, const string& name, ExpressionNode* expression)
-    :StatementNode(StatementType::Declaration)
+    DeclarationStatement(const string& type, const string& name, Expression* expression)
+    : Statement(StatementType::Declaration)
     {
-        //printf("DeclarationStatementNode %s %s\n", type.c_str(), name.c_str());
         this->type = std::make_shared<UnresolvedType>(type);
         this->name = name;
-        this->expression = unique_ptr<ExpressionNode>(expression);
+        this->expression = unique_ptr<Expression>(expression);
     };
 };
 
-struct AssignmentStatementNode : StatementNode
+struct AssignmentStatement : Statement
 {
     std::string name;
-    unique_ptr<ExpressionNode> expression;
+    unique_ptr<Expression> expression;
 
-    AssignmentStatementNode(const string& name, ExpressionNode* expression)
-    :StatementNode(StatementType::Assignment)
+    AssignmentStatement(const string& name, Expression* expression)
+    : Statement(StatementType::Assignment)
     {
-        //printf("AssignmentStatementNode %s\n", name.c_str());
         this->name = name;
-        this->expression = unique_ptr<ExpressionNode>(expression);
+        this->expression = unique_ptr<Expression>(expression);
     };
 };
 
-struct BlockStatementNode : StatementNode
+struct BlockStatement : Statement
 {
-    unique_ptr<BlockNode> block;
+    unique_ptr<Block> block;
 
-    BlockStatementNode(BlockNode* block)
-    :StatementNode(StatementType::Assignment)
+    BlockStatement(Block* block)
+    : Statement(StatementType::Assignment)
     {
-        //printf("BlockStatementNode\n");
-        this->block = unique_ptr<BlockNode>(block);
+        this->block = unique_ptr<Block>(block);
     };
 };
 
-struct IfStatementNode : StatementNode
+struct FunctionCallStatement : Statement
 {
-    unique_ptr<ExpressionNode> condition;
-    unique_ptr<BlockNode> if_block;
-    unique_ptr<BlockNode> else_block;
+    std::string function_name;
+    vector<unique_ptr<Expression>> arguments;
 
-    IfStatementNode(ExpressionNode* condition, BlockNode* if_block, BlockNode* else_block)
-    :StatementNode(StatementType::If)
+    FunctionCallStatement(const string& name, FunctionArguments* argument_list = nullptr)
+            : Statement(StatementType::FunctionCall)
     {
-        this->condition = unique_ptr<ExpressionNode>(condition);
-        this->if_block = unique_ptr<BlockNode>(if_block);
-        this->else_block = unique_ptr<BlockNode>(else_block);
+        this->function_name = name;
+
+        if(argument_list)
+        {
+            arguments.resize(argument_list->size());
+            for(size_t i = 0; i < arguments.size(); i++)
+            {
+                arguments[i] = unique_ptr<Expression>(argument_list->at(i));
+            }
+            delete argument_list;
+        }
+    }
+};
+
+struct IfStatement : Statement
+{
+    unique_ptr<Expression> condition;
+    unique_ptr<Block> if_block;
+    unique_ptr<Block> else_block;
+
+    IfStatement(Expression* condition, Block* if_block, Block* else_block)
+    : Statement(StatementType::If)
+    {
+        this->condition = unique_ptr<Expression>(condition);
+        this->if_block = unique_ptr<Block>(if_block);
+        this->else_block = unique_ptr<Block>(else_block);
     };
 };
 
-struct WhileLoopStatmentNode : StatementNode
+struct WhileLoopStatement : Statement
 {
-    unique_ptr<ExpressionNode> condition;
-    unique_ptr<BlockNode> loop_block;
+    unique_ptr<Expression> condition;
+    unique_ptr<Block> loop_block;
 
-    WhileLoopStatmentNode(ExpressionNode* condition, BlockNode* block)
-    :StatementNode(StatementType::While)
+    WhileLoopStatement(Expression* condition, Block* block)
+    : Statement(StatementType::While)
     {
-        this->condition = unique_ptr<ExpressionNode>(condition);
-        this->loop_block = unique_ptr<BlockNode>(block);
+        this->condition = unique_ptr<Expression>(condition);
+        this->loop_block = unique_ptr<Block>(block);
     };
 };
 
-struct ReturnStatmentNode : StatementNode
+struct ReturnStatement : Statement
 {
-    unique_ptr<ExpressionNode> return_expression;
+    unique_ptr<Expression> return_expression;
 
-    ReturnStatmentNode(ExpressionNode* expression)
-    :StatementNode(StatementType::Return)
+    ReturnStatement(Expression* expression)
+    : Statement(StatementType::Return)
     {
-        //printf("ReturnStatmentNode: %p\n", expression);
-        this->return_expression = unique_ptr<ExpressionNode>(expression);
+        this->return_expression = unique_ptr<Expression>(expression);
     };
 };

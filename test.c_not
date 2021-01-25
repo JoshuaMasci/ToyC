@@ -1,10 +1,14 @@
-i64 add2(i64 value)
+void print_i32(i32 value);
+
+i32 add2(i32 value)
 {
     return 2 + value;
 }
 
-i64 main()
+i32 main()
 {
-    i64 value = 15;
-    return add2(value);
+    i32 value = -3;
+    value = add2(value);
+    print_i32(value);
+    return 0;
 }

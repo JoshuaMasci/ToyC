@@ -6,32 +6,42 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
 
+#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/TargetRegistry.h"
-#include "llvm/ADT/Optional.h"
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/ADT/Optional.h>
+#include <llvm/Support/Host.h>
+#include <llvm/Support/TargetRegistry.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Target/TargetOptions.h>
 
-Module::Module(const string& module_name, ModuleNode* module_node)
+llvmModule::llvmModule(const string& module_name, Module* module)
 {
     this->context = std::make_unique<llvm::LLVMContext>();
     this->module = std::make_unique<llvm::Module>(module_name, *this->context);
 
     ScopeBlock global_block(nullptr);
 
-    //Functions
-    vector<llvm::Function*> function_prototypes(module_node->functions.size());
-    for(size_t i = 0; i < module_node->functions.size(); i++)
+    for(size_t i = 0; i < module->extern_functions.size(); i++)
     {
-        function_prototypes[i] = this->generate_function_prototype(module_node->functions[i]);
+        this->generate_extern_function(module->extern_functions[i]);
     }
-    for(size_t i = 0; i < module_node->functions.size(); i++)
+
+    //Functions
+    vector<llvm::Function*> function_prototypes(module->functions.size());
+    for(size_t i = 0; i < module->functions.size(); i++)
     {
-        this->generate_function_body(function_prototypes[i], module_node->functions[i]);
+        function_prototypes[i] = this->generate_function_prototype(module->functions[i]);
+    }
+    for(size_t i = 0; i < module->functions.size(); i++)
+    {
+        this->generate_function_body(function_prototypes[i], module->functions[i]);
     }
 }
 
-llvm::Type* Module::getType(shared_ptr<Type> type)
+llvm::Type* llvmModule::getType(shared_ptr<Type> type)
 {
     auto type_it = this->type_map.find(type);
     if(type_it == this->type_map.end())
@@ -61,6 +71,12 @@ llvm::Type* Module::getType(shared_ptr<Type> type)
             case TypeClass::Struct:
                 //TODO: this
                 break;
+            case TypeClass::Invalid:
+                if(type->get_type() == TypeEnum::Void)
+                {
+                    llvm_type = llvm::Type::getVoidTy(*this->context);
+                    break;
+                }
             default:
                 printf("Invalid Type during codegen!!!");
                 exit(-1);
@@ -72,7 +88,7 @@ llvm::Type* Module::getType(shared_ptr<Type> type)
     return this->type_map[type];
 }
 
-llvm::Function* Module::generate_function_prototype(unique_ptr<FunctionNode>& function_node)
+llvm::Function* llvmModule::generate_function_prototype(unique_ptr<Function>& function_node)
 {
     llvm::Type* return_type = this->getType(function_node->return_type);
     vector<llvm::BasicBlock*> llvm_basic_block_list;
@@ -90,7 +106,25 @@ llvm::Function* Module::generate_function_prototype(unique_ptr<FunctionNode>& fu
     return llvm_function;
 }
 
-void Module::generate_function_body(llvm::Function* function, unique_ptr<FunctionNode>& function_node)
+llvm::Function* llvmModule::generate_extern_function(unique_ptr<ExternFunction>& function)
+{
+    llvm::Type* return_type = this->getType(function->return_type);
+    vector<llvm::BasicBlock*> llvm_basic_block_list;
+    vector<llvm::Type*> arg_types;
+
+    arg_types.reserve(function->parameters.size());
+    for (int i = 0; i < function->parameters.size(); ++i)
+    {
+        arg_types.push_back(this->getType(function->parameters[i].type));
+    }
+
+    llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, makeArrayRef(arg_types), false);
+    llvm::Function* llvm_function = llvm::Function::Create(func_type, llvm::GlobalValue::ExternalLinkage, function->name,*this->module);
+    llvm_function->setCallingConv(llvm::CallingConv::C);
+    return llvm_function;
+}
+
+void llvmModule::generate_function_body(llvm::Function* function, unique_ptr<Function>& function_node)
 {
     llvm::BasicBlock* llvm_block = llvm::BasicBlock::Create(*this->context, "entry", function);
     llvm::IRBuilder<> builder(llvm_block);
@@ -113,18 +147,18 @@ void Module::generate_function_body(llvm::Function* function, unique_ptr<Functio
     }
 }
 
-BlockResult Module::generate_block(llvm::IRBuilder<>* builder, ScopeBlock* parent_scope, unique_ptr<BlockNode>& block)
+BlockResult llvmModule::generate_block(llvm::IRBuilder<>* builder, ScopeBlock* parent_scope, unique_ptr<Block>& block)
 {
     llvm::IRBuilder<>* current_builder = builder;
 
     ScopeBlock current_scope(parent_scope);
-    for(unique_ptr<StatementNode>& statement : block->statements)
+    for(unique_ptr<Statement>& statement: block->statements)
     {
         switch (statement->statement_type)
         {
             case StatementType::Declaration:
             {
-                DeclarationStatementNode *declaration_node = (DeclarationStatementNode*) statement.get();
+                DeclarationStatement *declaration_node = (DeclarationStatement*) statement.get();
                 llvm::Type* variable_type = this->getType(declaration_node->type);
 
                 llvm::AllocaInst* alloc = current_builder->CreateAlloca(variable_type, nullptr, declaration_node->name);
@@ -137,21 +171,33 @@ BlockResult Module::generate_block(llvm::IRBuilder<>* builder, ScopeBlock* paren
                 break;
             case StatementType::Assignment:
             {
-                AssignmentStatementNode* assignment_node = (AssignmentStatementNode*)statement.get();
+                AssignmentStatement* assignment_node = (AssignmentStatement*)statement.get();
                 llvm::AllocaInst* variable = current_scope.getLocalVariable(assignment_node->name);
                 llvm::Value* value = this->generate_expression(current_builder, &current_scope, assignment_node->expression);
                 current_builder->CreateStore(value, variable);
             }
                 break;
             case StatementType::Block:
-                if(this->generate_block(current_builder, &current_scope, ((BlockStatementNode*)statement.get())->block) == BlockResult::Returned);
+                if(this->generate_block(current_builder, &current_scope, ((BlockStatement*)statement.get())->block) == BlockResult::Returned);
                 {
                     return BlockResult::Returned;
                 }
                 break;
+            case StatementType::FunctionCall:
+            {
+                FunctionCallStatement* function_call = (FunctionCallStatement*)statement.get();
+                llvm::Function* called_function = this->module->getFunction(function_call->function_name);
+                vector<llvm::Value*> arguments(function_call->arguments.size());
+                for(size_t i = 0; i < function_call->arguments.size(); i++)
+                {
+                    arguments[i] = this->generate_expression(builder, &current_scope, function_call->arguments[i]);
+                }
+                current_builder->CreateCall(called_function, arguments);
+            }
+                break;
             case StatementType::If:
             {
-                IfStatementNode* if_statement_node = (IfStatementNode*)statement.get();
+                IfStatement* if_statement_node = (IfStatement*)statement.get();
                 llvm::Type* temp_type = llvm::Type::getInt32Ty(*this->context);//TODO dynamic if condition type
                 llvm::Value* condition_value = this->generate_expression(current_builder, &current_scope, if_statement_node->condition);
                 condition_value = current_builder->CreateICmpNE(condition_value, llvm::ConstantInt::get(temp_type, 0));
@@ -200,7 +246,7 @@ BlockResult Module::generate_block(llvm::IRBuilder<>* builder, ScopeBlock* paren
                 break;
             case StatementType::Return:
             {
-                ReturnStatmentNode* return_statement = (ReturnStatmentNode*)statement.get();
+                ReturnStatement* return_statement = (ReturnStatement*)statement.get();
                 llvm::Value* return_value = nullptr;
                 if(return_statement->return_expression)
                 {
@@ -214,26 +260,26 @@ BlockResult Module::generate_block(llvm::IRBuilder<>* builder, ScopeBlock* paren
     return BlockResult::None;
 }
 
-llvm::Value* Module::generate_expression(llvm::IRBuilder<>* builder, ScopeBlock* current_scope, unique_ptr<ExpressionNode>& expression)
+llvm::Value* llvmModule::generate_expression(llvm::IRBuilder<>* builder, ScopeBlock* current_scope, unique_ptr<Expression>& expression)
 {
     switch (expression->expression_type)
     {
         case ExpressionType::ConstInt:
         {
-            ConstantIntegerExpressionNode* int_node = (ConstantIntegerExpressionNode*)expression.get();
+            ConstantIntegerExpression* int_node = (ConstantIntegerExpression*)expression.get();
             IntType* int_type = (IntType*)int_node->int_type.get();
             return llvm::ConstantInt::get(this->getType(int_node->int_type), int_node->value, int_type->is_signed());
         }
         case ExpressionType::ConstFloat:
         {
-            ConstantDoubleExpressionNode* const_float = (ConstantDoubleExpressionNode*)expression.get();
+            ConstantDoubleExpression* const_float = (ConstantDoubleExpression*)expression.get();
             return llvm::ConstantFP::get(this->getType(const_float->float_type), const_float->value);
         }
         case ExpressionType::Identifier:
-            return builder->CreateLoad(current_scope->getLocalVariable(((IdentifierExpressionNode*)expression.get())->identifier_name), "load");
+            return builder->CreateLoad(current_scope->getLocalVariable(((IdentifierExpression*)expression.get())->identifier_name), "load");
         case ExpressionType::Function:
         {
-            FunctionCallExpressionNode* function_call = (FunctionCallExpressionNode*)expression.get();
+            FunctionCallExpression* function_call = (FunctionCallExpression*)expression.get();
             llvm::Function* called_function = this->module->getFunction(function_call->function_name);
             vector<llvm::Value*> arguments(function_call->arguments.size());
             for(size_t i = 0; i < function_call->arguments.size(); i++)
@@ -245,7 +291,7 @@ llvm::Value* Module::generate_expression(llvm::IRBuilder<>* builder, ScopeBlock*
         }
         case ExpressionType::BinaryOperator:
         {
-            BinaryOperatorExpressionNode* bin_op = (BinaryOperatorExpressionNode*)expression.get();
+            BinaryOperatorExpression* bin_op = (BinaryOperatorExpression*)expression.get();
             llvm::Value* lhs_value = this->generate_expression(builder, current_scope, bin_op->lhs);
             llvm::Value* rhs_value = this->generate_expression(builder, current_scope, bin_op->rhs);
 
@@ -288,12 +334,12 @@ llvm::Value* Module::generate_expression(llvm::IRBuilder<>* builder, ScopeBlock*
     return nullptr;
 }
 
-void Module::print_code()
+void llvmModule::print_code()
 {
     this->module->print(llvm::errs(), nullptr);
 }
 
-void Module::write_to_file(const string& file_name)
+void llvmModule::write_to_file(const string& file_name)
 {
     std::error_code EC;
     llvm::sys::fs::OpenFlags flags = (llvm::sys::fs::OpenFlags)0;
@@ -301,4 +347,55 @@ void Module::write_to_file(const string& file_name)
     llvm::WriteBitcodeToFile(*module, OS);
     OS.flush();
     OS.close();
+}
+
+void llvmModule::compile(const string &file_name)
+{
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmParser();
+    llvm::InitializeNativeTargetAsmPrinter();
+
+    //TODO figure out how to include all targets
+    /*llvm::InitializeAllTargetInfos();
+    llvm::InitializeAllTargets();
+    llvm::InitializeAllTargetMCs();
+    llvm::InitializeAllAsmParsers();
+    llvm::InitializeAllAsmPrinters();*/
+
+    auto TargetTriple =  llvm::sys::getDefaultTargetTriple();
+    this->module->setTargetTriple(TargetTriple);
+
+    std::string Error;
+    auto Target =  llvm::TargetRegistry::lookupTarget(TargetTriple, Error);
+    if (!Target) {
+        llvm::errs() << Error;
+        return;
+    }
+
+    auto CPU = "generic";
+    auto Features = "";
+
+    llvm::TargetOptions opt;
+    auto RM =  llvm::Optional< llvm::Reloc::Model>();
+    auto TheTargetMachine =
+            Target->createTargetMachine(TargetTriple, CPU, Features, opt, RM);
+
+    this->module->setDataLayout(TheTargetMachine->createDataLayout());
+
+    auto Filename = "output.o";
+    std::error_code EC;
+    llvm::raw_fd_ostream dest(file_name, EC,  llvm::sys::fs::OF_None);
+    if (EC) {
+        llvm::errs() << "Could not open file: " << EC.message();
+        return;
+    }
+
+    llvm::legacy::PassManager pass;
+    auto FileType =  llvm::CGFT_ObjectFile;
+    if (TheTargetMachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
+        llvm::errs() << "TheTargetMachine can't emit a file of this type";
+        return;
+    }
+    pass.run(*this->module);
+    dest.flush();
 }

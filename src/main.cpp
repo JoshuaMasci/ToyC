@@ -1,13 +1,12 @@
 #include "containers.hpp"
 #include "string_cache.hpp"
-#include "ast/node.hpp"
+#include "ast/module.hpp"
 #include "ast/ast_resolver.hpp"
 #include "llvm/llvm_code_gen.hpp"
 
 #include <stdio.h>
 
-extern unique_ptr<FunctionNode> main_func;
-extern unique_ptr<ModuleNode> module_node;
+extern unique_ptr<Module> ast_module;
 
 int yyparse(void);
 extern "C" FILE *yyin;
@@ -29,23 +28,24 @@ int main(int argc, char **argv)
     fclose(myfile);
     StringCache::clear();
 
-    if(!module_node)
+    if(!ast_module)
     {
         fprintf(stderr, "Filed to parse file");
         return -2;
     }
 
     //Resolve types, functions, consts, etc
-    AstResolver().resolve(module_node.get());
+    AstResolver().resolve(ast_module.get());
 
 	printf("Code Gen!!!!\n");
-    Module module(file_name, module_node.get());
+    llvmModule module(file_name, ast_module.get());
 
     printf("Print Code!!!!\n");
     module.print_code();
     printf("\n");
 
-    module.write_to_file("module.bc");
+    //module.write_to_file("module.bc");
+    module.compile("module.o");
 
 	return 0;
 }
