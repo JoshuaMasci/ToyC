@@ -22,6 +22,11 @@ llvmModule::llvmModule(const string& module_name, Module* module)
     this->context = std::make_unique<llvm::LLVMContext>();
     this->module = std::make_unique<llvm::Module>(module_name, *this->context);
 
+    for(auto& struct_object: module->structs)
+    {
+        this->generate_struct(struct_object);
+    }
+
     ScopeBlock global_block(nullptr);
 
     for(size_t i = 0; i < module->extern_functions.size(); i++)
@@ -88,22 +93,16 @@ llvm::Type* llvmModule::getType(shared_ptr<Type> type)
     return this->type_map[type];
 }
 
-llvm::Function* llvmModule::generate_function_prototype(unique_ptr<Function>& function_node)
-{
-    llvm::Type* return_type = this->getType(function_node->return_type);
-    vector<llvm::BasicBlock*> llvm_basic_block_list;
-    vector<llvm::Type*> arg_types;
 
-    arg_types.reserve(function_node->parameters.size());
-    for (int i = 0; i < function_node->parameters.size(); ++i)
+void llvmModule::generate_struct(unique_ptr<Struct>& struct_object)
+{
+    vector<llvm::Type*> struct_types(struct_object->members.size());
+    for(size_t i = 0; i < struct_types.size(); i++)
     {
-        arg_types.push_back(this->getType(function_node->parameters[i].type));
+        struct_types[i] = this->getType(struct_object->members[i].type);
     }
 
-    llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, makeArrayRef(arg_types), false);
-    llvm::Function* llvm_function = llvm::Function::Create(func_type, llvm::GlobalValue::ExternalLinkage, function_node->name,*this->module);
-    llvm_function->setCallingConv(llvm::CallingConv::C);
-    return llvm_function;
+    llvm::StructType* struct_type = llvm::StructType::create(*this->context, struct_types, struct_object->name);
 }
 
 llvm::Function* llvmModule::generate_extern_function(unique_ptr<ExternFunction>& function)
@@ -120,6 +119,24 @@ llvm::Function* llvmModule::generate_extern_function(unique_ptr<ExternFunction>&
 
     llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, makeArrayRef(arg_types), false);
     llvm::Function* llvm_function = llvm::Function::Create(func_type, llvm::GlobalValue::ExternalLinkage, function->name,*this->module);
+    llvm_function->setCallingConv(llvm::CallingConv::C);
+    return llvm_function;
+}
+
+llvm::Function* llvmModule::generate_function_prototype(unique_ptr<Function>& function_node)
+{
+    llvm::Type* return_type = this->getType(function_node->return_type);
+    vector<llvm::BasicBlock*> llvm_basic_block_list;
+    vector<llvm::Type*> arg_types;
+
+    arg_types.reserve(function_node->parameters.size());
+    for (int i = 0; i < function_node->parameters.size(); ++i)
+    {
+        arg_types.push_back(this->getType(function_node->parameters[i].type));
+    }
+
+    llvm::FunctionType* func_type = llvm::FunctionType::get(return_type, makeArrayRef(arg_types), false);
+    llvm::Function* llvm_function = llvm::Function::Create(func_type, llvm::GlobalValue::ExternalLinkage, function_node->name,*this->module);
     llvm_function->setCallingConv(llvm::CallingConv::C);
     return llvm_function;
 }

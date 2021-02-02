@@ -30,10 +30,10 @@ protected:
     unique_ptr<llvm::Module> module;
     unordered_map<shared_ptr<Type>, llvm::Type*> type_map;
 
+    void generate_struct(unique_ptr<Struct> &struct_object);
+    llvm::Function* generate_extern_function(unique_ptr<ExternFunction> &function);
     llvm::Function* generate_function_prototype(unique_ptr<Function>& function_node);
     void generate_function_body(llvm::Function* function, unique_ptr<Function>& function_node);
     BlockResult generate_block(llvm::IRBuilder<>* builder, ScopeBlock* parent_scope, unique_ptr<Block>& block);
     llvm::Value* generate_expression(llvm::IRBuilder<>* builder, ScopeBlock* current_scope, unique_ptr<Expression>& expression);
-
-    llvm::Function *generate_extern_function(unique_ptr<ExternFunction> &function);
 };

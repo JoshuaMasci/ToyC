@@ -95,6 +95,11 @@ void AstResolver::resolve(Module* module)
 {
     GlobalScope global_scope;
 
+    for(auto& struct_object: module->structs)
+    {
+        this->resolve_types_struct(struct_object);
+    }
+
     for(auto& function: module->extern_functions)
     {
         this->resolve_types_extern(function, &global_scope);
@@ -111,6 +116,16 @@ void AstResolver::resolve(Module* module)
     }
 
     //TODO process condition expressions to create required casting/comparisons for If/Loop statements
+}
+
+void AstResolver::resolve_types_struct(unique_ptr<Struct> &struct_object)
+{
+    printf("Struct Type: %s\n", struct_object->name.c_str());
+
+    for(size_t i = 0; i < struct_object->members.size(); i++)
+    {
+        struct_object->members[i].type = this->resolve_type(struct_object->members[i].type);
+    }
 }
 
 void AstResolver::resolve_types_extern(unique_ptr<ExternFunction>& function, GlobalScope* global_scope)

@@ -136,3 +136,114 @@ public:
     TypeClass get_class() override { return TypeClass::Struct; };
     TypeEnum get_type() override { return TypeEnum::Struct; };
 };
+
+namespace TestType
+{
+    struct StructInfo;
+
+    class Type
+    {
+    protected:
+        TypeEnum type_enum;
+        union Data
+        {
+            string unresolved_name;
+            StructInfo* struct_ptr;
+        } data;
+
+    public:
+        TypeEnum get_type()
+        {
+            return this->type_enum;
+        }
+
+        TypeClass get_class()
+        {
+            switch (this->type_enum)
+            {
+                case TypeEnum::Void:
+                case TypeEnum::Invalid:
+                    return TypeClass::Invalid;
+                case TypeEnum::Bool://TODO figure this out
+                case TypeEnum::Char8:
+                case TypeEnum::Uint8:
+                case TypeEnum::Int8:
+                case TypeEnum::Uint16:
+                case TypeEnum::Int16:
+                case TypeEnum::Uint32:
+                case TypeEnum::Int32:
+                case TypeEnum::Uint64:
+                case TypeEnum::Int64:
+                    return TypeClass::Int;
+                case TypeEnum::Float32:
+                case TypeEnum::Float64:
+                    return TypeClass::Float;
+                case TypeEnum::Struct:
+                    return TypeClass::Struct;
+            }
+        };
+
+        bool int_is_signed()
+        {
+            switch (this->type_enum)
+            {
+                case TypeEnum::Int8:
+                case TypeEnum::Int16:
+                case TypeEnum::Int32:
+                case TypeEnum::Int64:
+                    return true;
+                default:
+                    return false;
+            }
+        };
+
+        /*size_t get_size_bytes()
+        {
+            switch (this->type_enum)
+            {
+                case TypeEnum::Void:
+                case TypeEnum::Invalid:
+                    return 0;
+                case TypeEnum::Bool://TODO figure this out
+                case TypeEnum::Char8:
+                case TypeEnum::Uint8:
+                case TypeEnum::Int8:
+                    return 1;
+                case TypeEnum::Uint16:
+                case TypeEnum::Int16:
+                    return 2;
+                case TypeEnum::Uint32:
+                case TypeEnum::Int32:
+                case TypeEnum::Float32:
+                    return 4;
+                case TypeEnum::Uint64:
+                case TypeEnum::Int64:
+                case TypeEnum::Float64:
+                    return 8;
+                case TypeEnum::Struct:
+                    return 0;//TODO
+            }
+        };*/
+
+        //Compare
+        bool operator== (Type const& other)
+        {
+            if(this->type_enum == other.type_enum)
+            {
+                if(this->type_enum == TypeEnum::Invalid)
+                {
+                    //Compare names
+                    return this->data.unresolved_name == other.data.unresolved_name;
+                }
+                else if (this->type_enum == TypeEnum::Struct)
+                {
+                    return false;//TODO compare structs
+                }
+
+                //Type is not struct or invalid and has same type
+                return true;
+            }
+            return false;
+        };
+    };
+}

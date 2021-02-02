@@ -44,6 +44,7 @@ public:
 protected:
     unordered_map<string, shared_ptr<Type>> type_map;
 
+    void resolve_types_struct(unique_ptr<Struct> &struct_object);
     void resolve_types_extern(unique_ptr<ExternFunction> &function, GlobalScope* global_scope);
     void resolve_types_function(unique_ptr<Function>& function, GlobalScope* global_scope);
     void resolve_types_function_block(unique_ptr<Function>& function, GlobalScope* global_scope);

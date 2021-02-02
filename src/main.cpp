@@ -37,13 +37,9 @@ int main(int argc, char **argv)
     //Resolve types, functions, consts, etc
     AstResolver().resolve(ast_module.get());
 
-	printf("Code Gen!!!!\n");
     llvmModule module(file_name, ast_module.get());
-
-    printf("Print Code!!!!\n");
     module.print_code();
     printf("\n");
-
     //module.write_to_file("module.bc");
     module.compile("module.o");
 

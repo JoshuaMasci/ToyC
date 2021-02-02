@@ -16,10 +16,16 @@
 	long int_val;
 	double double_val;
 	size_t string_id;
+
 	Module* module_ptr;
+
+	Struct* struct_ptr;
+	StructMembers* struct_members;
+
     ExternFunction* extern_function;
     Function* function_ptr;
 	FunctionParameters* function_parameters;
+
     Block* block_ptr;
     Statement* statement_ptr;
 	Expression* expression_ptr;
@@ -28,7 +34,7 @@
 
 //Keywords
 %token RETURN IF ELSE WHILE FOR DO CONTINUE BREAK
-%token STRUCT ENUM UNION INTERFACE
+%token STRUCT ENUM UNION INTERFACE TEMPLATE
 
 //Symbols
 %token SEMI LPAREN RPAREN LBRACE RBRACE LBRACK RBRACK LARROW RARROW DOT COMMA ASSIGN
@@ -44,9 +50,14 @@
 %token <string_id> IDENTIFIER
 
 %type <module_ptr> module
-%type <extern_function> extern
+
+%type <struct_ptr> struct
+%type <struct_members> members
+
 %type <function_ptr> function
+%type <extern_function> extern
 %type <function_parameters> parameters
+
 %type <block_ptr> block
 %type <statement_ptr> statement
 %type <expression_ptr> expression
@@ -62,11 +73,19 @@
 %%
 file: module { ast_module = unique_ptr<Module>($<module_ptr>1); };
 
-module: function { Module* module = new Module(); module->functions.push_back(unique_ptr<Function>($<function_ptr>1)); $$ = module; }
-    | extern { Module* module = new Module(); module->extern_functions.push_back(unique_ptr<ExternFunction>($<extern_function>1)); $$ = module; }
+module: struct { Module* module = new Module(); module->structs.push_back(unique_ptr<Struct>($<struct_ptr>1)); $$ = module; }
+    | module struct { $1->structs.push_back(unique_ptr<Struct>($<struct_ptr>2)); }
+    | function { Module* module = new Module(); module->functions.push_back(unique_ptr<Function>($<function_ptr>1)); $$ = module; }
     | module function { $1->functions.push_back(unique_ptr<Function>($<function_ptr>2)); }
+    | extern { Module* module = new Module(); module->extern_functions.push_back(unique_ptr<ExternFunction>($<extern_function>1)); $$ = module; }
     | module extern { $1->extern_functions.push_back(unique_ptr<ExternFunction>($<extern_function>2)); }
     ;
+
+struct: STRUCT IDENTIFIER LBRACE members RBRACE { $$ = new Struct(StringCache::get($<string_id>2), $<struct_members>4); };
+
+members: IDENTIFIER IDENTIFIER SEMI { StructMembers* members = new StructMembers(); members->push_back(StructMember(false, StringCache::get($<string_id>1), StringCache::get($<string_id>2))); $$ = members; }
+        | members IDENTIFIER IDENTIFIER SEMI { $$->push_back(StructMember(false, StringCache::get($<string_id>2), StringCache::get($<string_id>3))); }
+        ;
 
 function: IDENTIFIER IDENTIFIER LPAREN RPAREN LBRACE block RBRACE { $$ = new Function(StringCache::get($<string_id>1), StringCache::get($<string_id>2), nullptr, $<block_ptr>6); }
         | IDENTIFIER IDENTIFIER LPAREN parameters RPAREN LBRACE block RBRACE { $$ = new Function(StringCache::get($<string_id>1), StringCache::get($<string_id>2), $<function_parameters>4, $<block_ptr>7); }

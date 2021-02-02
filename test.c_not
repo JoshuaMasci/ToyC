@@ -1,5 +1,12 @@
 void print_i32(i32 value);
 
+struct StructType
+{
+    i32 value1;
+    i64 value2;
+    bool value3;
+}
+
 i32 add2(i32 value)
 {
     return 2 + value;
